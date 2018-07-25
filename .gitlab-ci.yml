@@ -1,0 +1,64 @@
+image: php:5.6
+
+# Select what we should cache
+cache:
+  paths:
+  - vendor/
+
+before_script:
+- apt-get update -yqq
+
+# Installing git
+- apt-get install git -yqq
+
+# Installing zip and unzip
+- apt-get install zip unzip -yqq
+
+# Installing & setting up MySQL
+- apt-get install -qqy --no-install-recommends mysql-client
+- docker-php-ext-install pdo_mysql
+- mysql --user=root --password="$MYSQL_ROOT_PASSWORD" --host=mysql "$MYSQL_DATABASE"
+
+# Installing & setting up GD
+- apt-get install -yqq libfreetype6-dev libmcrypt-dev libjpeg-dev libpng-dev
+- docker-php-ext-configure gd --enable-gd-native-ttf --with-freetype-dir=/usr/include/freetype2 --with-png-dir=/usr/include --with-jpeg-dir=/usr/include
+- docker-php-ext-install gd
+- docker-php-ext-enable gd
+
+# Install composer
+- curl -sS https://getcomposer.org/installer | php
+
+# Install all project dependencies
+- php composer.phar install
+
+# Running PHP INIT for Yii2
+- ./init --env=Development
+
+# SED is not working so I changed it to PERL
+- perl -i~ -0pe "s/'dsn' => 'mysql:host=localhost;dbname=yii2advanced_test',\s+'username' => 'root',\s+'password' => '',/'dsn' => 'mysql:host=mysql;dbname=$MYSQL_DATABASE','username' => 'root','password' => '$MYSQL_ROOT_PASSWORD',/" common/config/test-local.php
+#- sed -i "s/'dsn' => 'mysql:host=localhost;dbname=yii2advanced_test',\s+'username' => 'root',\s+'password' => '',/'dsn' => 'mysql:host=mysql;dbname=$MYSQL_DATABASE','username' => 'root','password' => '$MYSQL_ROOT_PASSWORD',/" common/config/test-local.php
+
+# Running Yii2 migration
+- php yii_test migrate --interactive=0
+
+# Adding cookie validation key to unit tests (If you have such information before `migrate` it fails)
+- sed -i "s/'request' => \[\]/'request' => ['cookieValidationKey' => 'testkey']/" common/config/test-local.php
+
+services:
+- mysql:5.7
+
+variables:
+  MYSQL_DATABASE: yii2advanced_test
+  MYSQL_ROOT_PASSWORD: mysql
+
+# PHP 5.6 test
+test:mysql:
+  script:
+  - vendor/bin/codecept run
+
+# PHP 7 test
+test:php7:mysql:
+  image: php:7
+  script:
+  - vendor/bin/codecept run
+  allow_failure: true
